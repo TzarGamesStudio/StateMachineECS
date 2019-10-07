@@ -1,0 +1,19 @@
+{
+  "name": "com.tzargames.statemachine",
+  "version": "0.0.1",
+  "displayName": "State machine ECS",
+  "description": "State machine framework designed to work with Unity ECS",
+  "unity": "2019.1",
+  "unityRelease": "0b5",
+  "dependencies": {
+   "com.unity.entities": "0.1.1-preview"
+ },
+ "keywords": [
+    "ecs"
+  ],
+  "author": {
+    "name": "Tzar Games",
+    "email": "lespaul@live.ru",
+    "url": "https://github.com/TzarGamesStudio/StateMachineECS"
+  } 
+}
