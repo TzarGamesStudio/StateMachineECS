@@ -1,5 +1,5 @@
 {
-    "name": "TzarGames.StateMachineECS.Test",
+    "name": "TzarGames.StateMachineECS.StateMachineTests",
     "references": [
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",

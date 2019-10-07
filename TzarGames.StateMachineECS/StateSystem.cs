@@ -9,67 +9,40 @@ using static Unity.Mathematics.math;
 
 namespace TzarGames.StateMachineECS
 {
-    public struct GotoState : IComponentData
-    {
-        internal StateID ID;
-
-        public static GotoState Create<T>()
-        {
-            return new GotoState
-            {
-                ID = new StateID() { TypeIndex = TypeManager.GetTypeIndex<T>() }
-            };
-        }
-
-        public static GotoState Create(int typeIndex)
-        {
-            return new GotoState
-            {
-                ID = new StateID() { TypeIndex = typeIndex }
-            };
-        }
-    }
-
-    public struct StateID : IComponentData
-    {
-        internal int TypeIndex;
-    }
-
-    public struct DefaultState : IComponentData
-    {
-        internal StateID ID;
-    }
-
     public abstract class StateSystem : ComponentSystem
     {
-        List<IState> states;
-
-        protected override void OnCreate()
-        {
-            base.OnCreate();
-            states = new List<IState>();
-        }
+        List<IState> states = new List<IState>();
 
         protected override void OnUpdate()
         {
             var commands = PostUpdateCommands;
 
-            Entities.WithNone<StateID>().ForEach((Entity entity, ref GotoState stateChangeRequest) =>
+            Entities.WithNone<StateID>().ForEach((Entity entity, ref StateChangeRequest stateChangeRequest) =>
             {
                 EntityManager.AddComponentData(entity, new StateID { TypeIndex = -1 });
             });
 
             for (int i = 0; i < states.Count; i++)
             {
-                IState state = states[i];
+                var state = states[i];
                 state.UpdateOnExit(this);
-                state.UpdateOnEnter(this);
-                state.Update(this);
             }
 
-            Entities.WithAllReadOnly<StateID, GotoState>().ForEach((Entity entity) =>
+			for (int i = 0; i < states.Count; i++)
+			{
+				var state = states[i];
+				state.UpdateOnEnter(this);
+			}
+
+			for (int i = 0; i < states.Count; i++)
+			{
+				var state = states[i];
+				state.Update(this);
+			}
+
+			Entities.WithAllReadOnly<StateID, StateChangeRequest>().ForEach((Entity entity) =>
             {
-                commands.RemoveComponent<GotoState>(entity);
+                commands.RemoveComponent<StateChangeRequest>(entity);
             });
         }
 
@@ -91,56 +64,9 @@ namespace TzarGames.StateMachineECS
             void UpdateOnExit(StateSystem componentSystem);
         }
 
-        public static bool IsInState<T>(Entity e, EntityManager em)
+		public bool IsInState<T>(Entity e)
         {
-            if (em.HasComponent<T>(e) == false)
-            {
-                return false;
-            }
-
-            if (em.HasComponent<StateID>(e) == false)
-            {
-                return false;
-            }
-
-            var currentState = em.GetComponentData<StateID>(e);
-            var typeId = GetTypeIndex<T>();
-
-            return currentState.TypeIndex == typeId;
-        }
-
-        public static bool IsInState(StateID stateId, int stateTypeId)
-        {
-            return stateId.TypeIndex == stateTypeId;
-        }
-
-        public static bool IsInState<T>(Entity e, StateID stateId)
-        {
-            var typeId = GetTypeIndex<T>();
-            return stateId.TypeIndex == typeId;
-        }
-
-        public static bool IsInState<T>(Entity e, ComponentDataFromEntity<StateID> em)
-        {
-            if (em.Exists(e) == false)
-            {
-                return false;
-            }
-
-            var currentState = em[e];
-            var typeId = GetTypeIndex<T>();
-
-            return currentState.TypeIndex == typeId;
-        }
-
-        public bool IsInState<T>(Entity e)
-        {
-            return IsInState<T>(e, EntityManager);
-        }
-
-        private static int GetTypeIndex<T>()
-        {
-            return TypeManager.GetTypeIndex<T>();
+            return StateUtility.IsInState<T>(e, EntityManager);
         }
 
         protected class ComponentDataState<T> : IState where T : struct, IComponentData
@@ -149,14 +75,14 @@ namespace TzarGames.StateMachineECS
 
             public ComponentDataState()
             {
-                typeIndex = GetTypeIndex<T>();
+                typeIndex = StateUtility.GetTypeIndex<T>();
             }
 
             public void UpdateOnEnter(StateSystem componentSystem)
             {
                 var em = componentSystem.EntityManager;
 
-                componentSystem.Entities.WithNone<T>().ForEach((Entity entity, ref StateID stateId, ref GotoState changeRequest) =>
+                componentSystem.Entities.WithNone<T>().ForEach((Entity entity, ref StateID stateId, ref StateChangeRequest changeRequest) =>
                 {
                     if (changeRequest.ID.TypeIndex != typeIndex)
                     {
@@ -171,7 +97,7 @@ namespace TzarGames.StateMachineECS
                     em.AddComponentData(entity, CreateDefaultData());
                 });
 
-                componentSystem.Entities.ForEach((Entity entity, ref T state, ref StateID stateID, ref GotoState changeRequest) =>
+                componentSystem.Entities.ForEach((Entity entity, ref T state, ref StateID stateID, ref StateChangeRequest changeRequest) =>
                 {
                     if (changeRequest.ID.TypeIndex == stateID.TypeIndex)
                     {
@@ -184,7 +110,7 @@ namespace TzarGames.StateMachineECS
                     }
 
                     stateID.TypeIndex = typeIndex;
-                    OnEnter(ref state);
+                    OnEnter(entity, ref state);
                 });
             }
 
@@ -199,13 +125,13 @@ namespace TzarGames.StateMachineECS
                         return;
                     }
 
-                    OnUpdate(ref state);
+                    OnUpdate(entity, ref state);
                 });
             }
 
             public void UpdateOnExit(StateSystem componentSystem)
             {
-                componentSystem.Entities.ForEach((Entity entity, ref T state, ref StateID stateID, ref GotoState changeRequest) =>
+                componentSystem.Entities.ForEach((Entity entity, ref T state, ref StateID stateID, ref StateChangeRequest changeRequest) =>
                 {
                     if (changeRequest.ID.TypeIndex == stateID.TypeIndex)
                     {
@@ -217,7 +143,7 @@ namespace TzarGames.StateMachineECS
                         return;
                     }
 
-                    OnExit(ref state);
+                    OnExit(entity, ref state);
                 });
             }
 
@@ -226,19 +152,16 @@ namespace TzarGames.StateMachineECS
                 return new T();
             }
 
-            public virtual void OnEnter(ref T state)
+            public virtual void OnEnter(Entity entity, ref T state)
             {
-                UnityEngine.Debug.LogFormat("Entered to state {0}", state.GetType().Name);
             }
 
-            public virtual void OnExit(ref T state)
+            public virtual void OnExit(Entity entity, ref T state)
             {
-                UnityEngine.Debug.LogFormat("Exit from state {0}", state.GetType().Name);
             }
 
-            public virtual void OnUpdate(ref T state)
+            public virtual void OnUpdate(Entity entity, ref T state)
             {
-                UnityEngine.Debug.LogFormat("Updating state {0}", state.GetType().Name);
             }
         }
     }
