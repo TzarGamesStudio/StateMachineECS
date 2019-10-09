@@ -11,16 +11,78 @@ namespace TzarGames.StateMachineECS
 {
     public abstract class StateSystem : ComponentSystem
     {
-        List<IState> states = new List<IState>();
+        List<StateBase> states = new List<StateBase>();
+        EntityQuery requestsWithoutState;
+        EntityQuery requestsWithState;
+
+        protected override void OnCreate()
+        {
+            base.OnCreate();
+
+            requestsWithoutState = GetEntityQuery(ComponentType.ReadOnly<StateChangeRequest>(), ComponentType.Exclude<StateID>());
+            requestsWithState = GetEntityQuery(ComponentType.ReadOnly<StateChangeRequest>(), ComponentType.ReadOnly<StateID>());
+        }
 
         protected override void OnUpdate()
         {
             var commands = PostUpdateCommands;
+            var em = EntityManager;
+            var reqEntities = requestsWithoutState.ToEntityArray(Allocator.TempJob);
 
-            Entities.WithNone<StateID>().ForEach((Entity entity, ref StateChangeRequest stateChangeRequest) =>
+            for(int i=0; i<reqEntities.Length; i++)
             {
-                EntityManager.AddComponentData(entity, new StateID { TypeIndex = -1 });
+                var entity = reqEntities[i];
+                commands.AddComponent(entity, new StateID { TypeIndex = -1 });
+            }
+            reqEntities.Dispose();
+
+            Entities.ForEach((Entity entity, ref StateChangeRequest changeRequest, ref StateID stateId) =>
+            {
+                for(int i=0; i<states.Count; i++)
+                {
+                    var state = states[i];
+                    var stateComponentType = state.GetComponentType();
+                    var id = state.StateID;
+
+                    if (em.HasComponent(entity, stateComponentType))
+                    {
+                        continue;
+                    }
+
+                    if (changeRequest.ID.TypeIndex != id)
+                    {
+                        continue;
+                    }
+                    
+                    if (stateId.TypeIndex == id)
+                    {
+                        continue;
+                    }
+
+                    em.AddComponent(entity, stateComponentType);
+                }
             });
+            
+            updateStates();
+
+            var requestWithStateEntities = requestsWithState.ToEntityArray(Allocator.TempJob);
+
+            for (int i = 0; i < requestWithStateEntities.Length; i++)
+            {
+                var entity = requestWithStateEntities[i];
+                commands.RemoveComponent<StateChangeRequest>(entity);
+            }
+
+            requestWithStateEntities.Dispose();
+        }
+
+        void updateStates()
+        {
+            for (int i = 0; i < states.Count; i++)
+            {
+                var state = states[i];
+                state.OnBeforeUpdate();
+            }
 
             for (int i = 0; i < states.Count; i++)
             {
@@ -28,40 +90,60 @@ namespace TzarGames.StateMachineECS
                 state.UpdateOnExit(this);
             }
 
-			for (int i = 0; i < states.Count; i++)
-			{
-				var state = states[i];
-				state.UpdateOnEnter(this);
-			}
-
-			for (int i = 0; i < states.Count; i++)
-			{
-				var state = states[i];
-				state.Update(this);
-			}
-
-			Entities.WithAllReadOnly<StateID, StateChangeRequest>().ForEach((Entity entity) =>
+            for (int i = 0; i < states.Count; i++)
             {
-                commands.RemoveComponent<StateChangeRequest>(entity);
-            });
+                var state = states[i];
+                state.UpdateOnEnter(this);
+            }
+
+            for (int i = 0; i < states.Count; i++)
+            {
+                var state = states[i];
+                state.Update(this);
+            }
         }
 
-        protected void RegisterState<T>() where T : IState, new()
+        protected void RegisterState<T>() where T : StateBase, new()
         {
             var state = new T();
-            states.Add(state);
+            RegisterState(state);
         }
 
-        protected void RegisterState(IState state)
+        protected void RegisterState(StateBase state)
         {
-            states.Add(state);
+            var stateType = state.GetType();
+            bool replaced = false;
+
+            for (int i = 0; i < states.Count; i++)
+            {
+                var otherState = states[i];
+                var otherType = otherState.GetType();
+
+                if(stateType.IsSubclassOf(otherType))
+                {
+                    states[i] = state;
+                    replaced = true;
+                }
+            }
+
+            state.Initialize(this);
+
+            if(replaced == false)
+            {
+                states.Add(state);
+            }
         }
 
-        protected interface IState
+        protected abstract class StateBase
         {
-            void UpdateOnEnter(StateSystem componentSystem);
-            void Update(StateSystem componentSystem);
-            void UpdateOnExit(StateSystem componentSystem);
+            public StateSystem System { get; protected set; }
+            public abstract int StateID { get; }
+            public abstract ComponentType GetComponentType();
+            public abstract void Initialize(StateSystem system);
+            public abstract void OnBeforeUpdate();
+            public abstract void UpdateOnEnter(StateSystem componentSystem);
+            public abstract void Update(StateSystem componentSystem);
+            public abstract void UpdateOnExit(StateSystem componentSystem);
         }
 
 		public bool IsInState<T>(Entity e)
@@ -69,34 +151,64 @@ namespace TzarGames.StateMachineECS
             return StateUtility.IsInState<T>(e, EntityManager);
         }
 
-        protected class ComponentDataState<T> : IState where T : struct, IComponentData
+        protected class State<T> : StateBase where T : struct, IComponentData
         {
-            int typeIndex;
+            public override int StateID
+            {
+                get
+                {
+                    return typeIndex;
+                }
+            }
 
-            public ComponentDataState()
+            int typeIndex;
+            ComponentType componentType;
+
+            public State()
             {
                 typeIndex = StateUtility.GetTypeIndex<T>();
             }
 
-            public void UpdateOnEnter(StateSystem componentSystem)
+            public override void Initialize(StateSystem system)
+            {
+                System = system;
+                componentType = new ComponentType(typeof(T));
+            }
+
+            public override ComponentType GetComponentType()
+            {
+                return componentType;
+            }
+
+            public void RequestStateChange<K>(Entity entity) where K : IComponentData
+            {
+                if(System.EntityManager.HasComponent<StateChangeRequest>(entity))
+                {
+                    System.EntityManager.SetComponentData(entity, StateChangeRequest.Create<K>());
+                    return;
+                }
+
+                System.PostUpdateCommands.AddComponent(entity, StateChangeRequest.Create<K>());
+            }
+
+            public void RequestStateChange<K>(Entity entity, K data) where K : struct, IComponentData
+            {
+                if(System.EntityManager.HasComponent<K>(entity))
+                {
+                    System.EntityManager.SetComponentData(entity, data);
+                }
+                else
+                {
+                    System.PostUpdateCommands.AddComponent(entity, data);
+                }
+
+                RequestStateChange<K>(entity);
+            }
+
+            public override void UpdateOnEnter(StateSystem componentSystem)
             {
                 var em = componentSystem.EntityManager;
-
-                componentSystem.Entities.WithNone<T>().ForEach((Entity entity, ref StateID stateId, ref StateChangeRequest changeRequest) =>
-                {
-                    if (changeRequest.ID.TypeIndex != typeIndex)
-                    {
-                        return;
-                    }
-
-                    if (stateId.TypeIndex == typeIndex)
-                    {
-                        return;
-                    }
-
-                    em.AddComponentData(entity, CreateDefaultData());
-                });
-
+                
                 componentSystem.Entities.ForEach((Entity entity, ref T state, ref StateID stateID, ref StateChangeRequest changeRequest) =>
                 {
                     if (changeRequest.ID.TypeIndex == stateID.TypeIndex)
@@ -114,7 +226,7 @@ namespace TzarGames.StateMachineECS
                 });
             }
 
-            public void Update(StateSystem componentSystem)
+            public override void Update(StateSystem componentSystem)
             {
                 var em = componentSystem.EntityManager;
 
@@ -129,7 +241,7 @@ namespace TzarGames.StateMachineECS
                 });
             }
 
-            public void UpdateOnExit(StateSystem componentSystem)
+            public override void UpdateOnExit(StateSystem componentSystem)
             {
                 componentSystem.Entities.ForEach((Entity entity, ref T state, ref StateID stateID, ref StateChangeRequest changeRequest) =>
                 {
@@ -147,9 +259,8 @@ namespace TzarGames.StateMachineECS
                 });
             }
 
-            public virtual T CreateDefaultData()
+            public override void OnBeforeUpdate()
             {
-                return new T();
             }
 
             public virtual void OnEnter(Entity entity, ref T state)

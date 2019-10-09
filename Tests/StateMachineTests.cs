@@ -22,11 +22,13 @@ namespace TzarGames.StateMachineECS.Tests
 		{
             protected override void OnCreate()
 			{
+                base.OnCreate();
+
 				RegisterState<DeadState>();
 				RegisterState<AliveState>();
 			}
 
-            class BaseState<T> : ComponentDataState<T> where T : struct, IComponentData
+            class BaseState<T> : State<T> where T : struct, IComponentData
 			{
 				public override void OnEnter(Entity entity, ref T state)
 				{
@@ -69,17 +71,20 @@ namespace TzarGames.StateMachineECS.Tests
 
             em.AddComponentData(obj, StateChangeRequest.Create<Dead>());
 			em.AddComponentData(obj2, StateChangeRequest.Create<Alive>());
-			system.Update();
-			
-            Assert.IsTrue(em.HasComponent<Dead>(obj));
-			Assert.IsTrue(em.HasComponent<Alive>(obj2));
+
+            system.Update();
+            system.Update();
+            
+            Assert.IsTrue(StateUtility.IsInState<Dead>(obj, em));
+			Assert.IsTrue(StateUtility.IsInState<Alive>(obj2, em));
 
 			em.AddComponentData(obj, StateChangeRequest.Create<Alive>());
 			em.AddComponentData(obj2, StateChangeRequest.Create<Dead>());
-			system.Update();
 
-			Assert.IsTrue(em.HasComponent<Alive>(obj));
-			Assert.IsTrue(em.HasComponent<Dead>(obj2));
-		}
+            system.Update();
+
+            Assert.IsTrue(StateUtility.IsInState<Alive>(obj, em));
+            Assert.IsTrue(StateUtility.IsInState<Dead>(obj2, em));
+        }
 	}
 }
