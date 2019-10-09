@@ -28,7 +28,7 @@ namespace TzarGames.StateMachineECS.Tests
 				RegisterState<AliveState>();
 			}
 
-            class BaseState<T> : State<T> where T : struct, IComponentData
+            class CharacterBaseState<T> : State<T> where T : struct, IComponentData
 			{
 				public override void OnEnter(Entity entity, ref T state)
 				{
@@ -49,11 +49,11 @@ namespace TzarGames.StateMachineECS.Tests
 				}
 			}
 
-            class DeadState : BaseState<Dead>
+            class DeadState : CharacterBaseState<Dead>
 			{
 			}
 
-            class AliveState : BaseState<Alive>
+            class AliveState : CharacterBaseState<Alive>
 			{
 			}
 		}
