@@ -164,6 +164,8 @@ namespace TzarGames.StateMachineECS
             int typeIndex;
             ComponentType componentType;
 
+            protected EntityManager EntityManager;
+
             public State()
             {
                 typeIndex = StateUtility.GetTypeIndex<T>();
@@ -172,6 +174,7 @@ namespace TzarGames.StateMachineECS
             public override void Initialize(StateSystem system)
             {
                 System = system;
+                EntityManager = System.EntityManager;
                 componentType = new ComponentType(typeof(T));
             }
 
