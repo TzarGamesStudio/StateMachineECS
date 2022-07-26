@@ -1,24 +1,17 @@
-﻿using System.Collections;
-using System.Collections.Generic;
-using NUnit.Framework;
+﻿using NUnit.Framework;
 using UnityEngine;
-using UnityEngine.TestTools;
 using Unity.Entities;
 
 namespace TzarGames.StateMachineECS.Tests
 {
     public class StateMachineTests
     {
-        struct Dead : IComponentData
-        {
-        }
-
-        struct Alive : IComponentData
+		struct CharacterSystemTag : IComponentData
         {
         }
 
 		[DisableAutoCreation]
-		class CharacterSystem : StateSystem
+		class CharacterSystem : StateSystem<CharacterSystemTag>
 		{
             protected override void OnCreate()
 			{
@@ -28,35 +21,39 @@ namespace TzarGames.StateMachineECS.Tests
 				RegisterState<AliveState>();
 			}
 
-            class CharacterBaseState<T> : State<T> where T : struct, IComponentData
+            public class CharacterBaseState : State
 			{
-				public override void OnEnter(Entity entity, ref T state)
+				public override void OnEnter(Entity entity)
 				{
-					base.OnEnter(entity, ref state);
-					Debug.LogFormat("{0} entered to state {1}", entity.ToString(), state.GetType().Name);
+					base.OnEnter(entity);
+					Debug.LogFormat("{0} entered to state {1}", entity.ToString(), GetType().Name);
 				}
 
-				public override void OnExit(Entity entity, ref T state)
+				public override void OnExit(Entity entity)
 				{
-					base.OnExit(entity, ref state);
-					Debug.LogFormat("{0} exit from state {1}", entity.ToString(), state.GetType().Name);
+					base.OnExit(entity);
+					Debug.LogFormat("{0} exit from state {1}", entity.ToString(), GetType().Name);
 				}
 
-				public override void OnUpdate(Entity entity, ref T state)
+				public override void OnUpdate(Entity entity)
 				{
-					base.OnUpdate(entity, ref state);
-					Debug.LogFormat("{0} Update state {1}", entity.ToString(), state.GetType().Name);
+					base.OnUpdate(entity);
+					Debug.LogFormat("{0} Update state {1}", entity.ToString(), GetType().Name);
 				}
 			}
 
-            class DeadState : CharacterBaseState<Dead>
+            public class DeadState : CharacterBaseState
 			{
 			}
 
-            class AliveState : CharacterBaseState<Alive>
+            public class AliveState : CharacterBaseState
 			{
 			}
 		}
+
+		class TestCommandBufferSystem : EntityCommandBufferSystem
+        {
+        }
 
 		[Test]
 		public void TestStateChange()
@@ -64,27 +61,29 @@ namespace TzarGames.StateMachineECS.Tests
 			var world = new World("Test world");
 			var em = world.EntityManager;
 
+			var commandBufferSystem = world.CreateSystem<TestCommandBufferSystem>();
 			var system = world.CreateSystem<CharacterSystem>();
 
-			var obj = em.CreateEntity();
-			var obj2 = em.CreateEntity();
+			var obj = em.CreateEntity(typeof(StateID), typeof(CharacterSystemTag));
+			var obj2 = em.CreateEntity(typeof(StateID), typeof(CharacterSystemTag));
 
-            em.AddComponentData(obj, StateChangeRequest.Create<Dead>());
-			em.AddComponentData(obj2, StateChangeRequest.Create<Alive>());
-
-            system.Update();
-            system.Update();
-            
-            Assert.IsTrue(StateUtility.IsInState<Dead>(obj, em));
-			Assert.IsTrue(StateUtility.IsInState<Alive>(obj2, em));
-
-			em.AddComponentData(obj, StateChangeRequest.Create<Alive>());
-			em.AddComponentData(obj2, StateChangeRequest.Create<Dead>());
+			system.RequestStateChange<CharacterSystem.DeadState>(obj);
+			system.RequestStateChange<CharacterSystem.AliveState>(obj2);
 
             system.Update();
+			commandBufferSystem.Update();
 
-            Assert.IsTrue(StateUtility.IsInState<Alive>(obj, em));
-            Assert.IsTrue(StateUtility.IsInState<Dead>(obj2, em));
+			Assert.IsTrue(system.IsInState<CharacterSystem.DeadState>(obj));
+			Assert.IsTrue(system.IsInState<CharacterSystem.AliveState>(obj2));
+
+			system.RequestStateChange<CharacterSystem.AliveState>(obj);
+			system.RequestStateChange<CharacterSystem.DeadState>(obj2);
+
+			system.Update();
+			commandBufferSystem.Update();
+
+			Assert.IsTrue(system.IsInState<CharacterSystem.AliveState>(obj));
+            Assert.IsTrue(system.IsInState<CharacterSystem.DeadState>(obj2));
         }
 	}
 }
