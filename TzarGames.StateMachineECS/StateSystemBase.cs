@@ -24,7 +24,7 @@ namespace TzarGames.StateMachineECS
 
         protected virtual EntityCommandBufferSystem InitializeEntityCommandBufferSystem()
         {
-            return World.GetExistingSystem<EntityCommandBufferSystem>();
+            return World.GetExistingSystemManaged<EntityCommandBufferSystem>();
         }
 
         bool commandsInitializedEarly = false;
@@ -61,7 +61,7 @@ namespace TzarGames.StateMachineECS
                 state.OnBeforeUpdate();
             }
 
-            using(var chunks = _stateQuery.CreateArchetypeChunkArray(Allocator.Temp))
+            using(var chunks = _stateQuery.ToArchetypeChunkArray(Allocator.Temp))
             {
                 // EXIT
                 foreach (var chunk in chunks)
@@ -184,27 +184,23 @@ namespace TzarGames.StateMachineECS
             return state;
         }
 
-        protected void RegisterState(State state, bool dontReplace = false)
+        protected void RegisterState(State state)
         {
             var stateType = state.GetType();
 
             bool replaced = false;
 
-            if (dontReplace == false)
+            for (int i = 0; i < stateProcessors.Count; i++)
             {
-                for (int i = 0; i < stateProcessors.Count; i++)
-                {
-                    var otherState = stateProcessors[i];
-                    var otherType = otherState.GetType();
+                var otherState = stateProcessors[i];
+                var otherType = otherState.GetType();
 
-                    if (stateType.IsSubclassOf(otherType))
-                    {
-                        stateProcessors[i] = state;
-                        replaced = true;
-                    }
+                if (stateType.IsSubclassOf(otherType))
+                {
+                    stateProcessors[i] = state;
+                    replaced = true;
                 }
             }
-
             if (replaced == false)
             {
                 stateProcessors.Add(state);
@@ -241,7 +237,7 @@ namespace TzarGames.StateMachineECS
         {
             internal int ID;
 
-            public StateSystemBase System { get; set; }
+            public StateSystemBase System { get; protected set; }
             protected EntityCommandBuffer Commands;
             protected EntityManager EntityManager;
             protected World World;
@@ -264,31 +260,32 @@ namespace TzarGames.StateMachineECS
                 return System.EntityManager.Exists(entity);
             }
 
-            public bool HasComponent<T>(Entity entity) where T : struct, IComponentData
+            public bool HasComponent<T>(Entity entity) where T : unmanaged, IComponentData
             {
                 return System.HasComponent<T>(entity);
             }
 
-            public T GetComponent<T>(Entity entity) where T : struct, IComponentData
+            public bool HasBuffer<T>(Entity entity) where T : unmanaged, IBufferElementData
+            {
+                return System.HasBuffer<T>(entity);
+            }
+
+            public T GetComponent<T>(Entity entity) where T : unmanaged, IComponentData
             {
                 return System.GetComponent<T>(entity);
             }
+
+            public DynamicBuffer<T> GetBuffer<T>(Entity entity) where T : unmanaged, IBufferElementData
+            {
+                return System.GetBuffer<T>(entity);
+            }
+
             public T GetComponentObject<T>(Entity entity)
             {
                 return System.EntityManager.GetComponentObject<T>(entity);
             }
 
-            public DynamicBuffer<T> GetBuffer<T>(Entity entity) where T : struct, IBufferElementData
-            {
-                return System.GetBuffer<T>(entity);
-            }
-
-            public bool HasBuffer<T>(Entity entity) where T : struct, IBufferElementData
-            {
-                return System.EntityManager.HasComponent<T>(entity);
-            }
-
-            public void SetComponent<T>(Entity entity, T data) where T : struct, IComponentData
+            public void SetComponent<T>(Entity entity, T data) where T : unmanaged, IComponentData
             {
                 System.SetComponent<T>(entity, data);
             }

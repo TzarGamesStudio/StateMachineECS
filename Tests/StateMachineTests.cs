@@ -61,8 +61,8 @@ namespace TzarGames.StateMachineECS.Tests
 			var world = new World("Test world");
 			var em = world.EntityManager;
 
-			var commandBufferSystem = world.CreateSystem<TestCommandBufferSystem>();
-			var system = world.CreateSystem<CharacterSystem>();
+			var commandBufferSystem = world.CreateSystemManaged<TestCommandBufferSystem>();
+			var system = world.CreateSystemManaged<CharacterSystem>();
 
 			var obj = em.CreateEntity(typeof(StateID), typeof(CharacterSystemTag));
 			var obj2 = em.CreateEntity(typeof(StateID), typeof(CharacterSystemTag));
